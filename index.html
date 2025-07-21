@@ -1,292 +1,269 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Turtle Run – Webversion</title>
+  <meta charset="UTF-8" />
+  <title>Turtle Run</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { margin: 0; overflow: hidden; background: #1e1e28; }
-    canvas { display: block; background: #1e1e28; width:100vw; height:100vh; }
-    #ui-overlay { position:absolute; bottom:0; width:100%; height:160px; pointer-events:none; }
-    #ui-overlay button {
+    body { margin:0; overflow:hidden; background:#1e1e2e; }
+    canvas { display:block; width:100vw; height:100vh; }
+    #ui { position:absolute; bottom:0; width:100%; height:160px; pointer-events:none; }
+    #ui button {
       position:absolute; width:80px; height:80px;
-      font-size:24px; font-weight:bold;
-      pointer-events:all; user-select:none;
+      font-size:24px; font-weight:bold; pointer-events:all;
     }
-    #btn-up { left: calc(50% - 100px); bottom:70px; }
-    #btn-down { left: calc(50% + 20px); bottom:70px; }
-    #btn-special { left: calc(50% + 20px); bottom:10px; }
-    #btn-special.cooldown { background: #ccc; color: #666; }
+    #up{left:calc(50% - 100px);bottom:70px;}
+    #down{left:calc(50% + 20px);bottom:70px;}
+    #power{left:calc(50% + 20px);bottom:10px;}
+    #power.cool{background:#ccc;color:#666;}
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas" width="768" height="1024"></canvas>
-  <div id="ui-overlay">
-    <button id="btn-up">▲</button>
-    <button id="btn-down">▼</button>
-    <button id="btn-special">POWER</button>
+  <canvas id="c" width="768" height="1024"></canvas>
+  <div id="ui">
+    <button id="up">▲</button>
+    <button id="down">▼</button>
+    <button id="power">POWER</button>
   </div>
-
   <script>
-  // === Assets laden & Spiel starten ===
-  const spriteFiles = {
-    Standard: ["turtle1.png", "turtle2.png"],
-    Blau:     ["käfer1.png", "käfer2.png"],
-    Rot:      ["rabbit1.png", "rabbit2.png"],
-    Gelb:     ["frog1.png", "frog2.png"],
-    Kreis:    ["vogel1.png", "vogel2.png"],
-    Dreieck:  ["drache1.png", "drache2.png"],
-    Chaser:   ["dino1.png", "dino2.png"],
-    Coin:     ["coin1.png", "coin2.png"],
-    Block:    ["block1.png"],
-    Background:["background.png"]
-  };
-  const images = {};
-  let loaded=0, total=0;
-  for (let key in spriteFiles) total += spriteFiles[key].length;
-  for (let key in spriteFiles) {
-    images[key]=[];
-    spriteFiles[key].forEach(src=>{
-      const img=new Image();
-      img.src=src;
-      img.onload=()=>{ if(++loaded===total) init(); };
-      images[key].push(img);
-    });
-  }
-  const coinSound=new Audio("coin.mp3");
-  const bgMusic=new Audio("backgroundMusic.mp3");
-  bgMusic.loop=true;
-  bgMusic.volume=0.5;
+    // == SETUP ==
+    const CANVAS = document.getElementById("c");
+    const ctx = CANVAS.getContext("2d");
+    const W = CANVAS.width, H = CANVAS.height;
 
-  function init(){
-    bgMusic.play().catch(err=>{});
-    setup();
-    requestAnimationFrame(loop);
-  }
-
-  // === Spielvariablen & Setup ===
-  const canvas=document.getElementById("gameCanvas");
-  const ctx=canvas.getContext("2d");
-  const WIDTH=canvas.width, HEIGHT=canvas.height;
-  let coins, blocks, projectiles, player, chaser;
-  let coinTimer, blockTimer, gameTime, score, coinCount;
-  let level, levelTimer, specialCooldown, specialActive, specialActiveTimer, projectileDelay;
-  let animTimer, animFrame, gameState;
-  let selectedSkin, skins;
-
-  function setup(){
-    coins=[]; blocks=[]; projectiles=[];
-    coinTimer=0; blockTimer=0; gameTime=0; score=0; coinCount=0;
-    level=1; levelTimer=0; specialCooldown=0;
-    specialActive=false; specialActiveTimer=0; projectileDelay=null;
-    animTimer=0; animFrame=0; gameState="start";
-    player={x:100,y:HEIGHT/2,w:40,h:40,speed:4,baseSpeed:4,vy:0};
-    chaser={x:50,y:HEIGHT/2,w:40,h:40,speed:2.5};
-
-    skins=[
-      {name:"Standard",cost:0,owned:true},
-      {name:"Blau",cost:10,owned:false},
-      {name:"Rot",cost:25,owned:false},
-      {name:"Gelb",cost:40,owned:false},
-      {name:"Kreis",cost:65,owned:false},
-      {name:"Dreieck",cost:111,owned:false}
-    ];
-    selectedSkin=skins[0];
-
-    // Input
-    document.getElementById("btn-up").onpointerdown=()=>{ player.vy=player.speed; };
-    document.getElementById("btn-down").onpointerdown=()=>{ player.vy=-player.speed; };
-    document.getElementById("btn-up").onpointerup=()=>{ player.vy=0; };
-    document.getElementById("btn-down").onpointerup=()=>{ player.vy=0; };
-    document.getElementById("btn-special").onpointerdown=activateSpecial;
-    canvas.onclick=ev=>{
-      if(gameState==="start"||gameState==="gameover"){
-        if(gameState==="start") gameState="playing";
-        else setup();
-      }
+    // Asset-Dateien exakt wie benannt
+    const SPR = {
+      Standard: ["turtle1.png", "turtle2.png"],
+      Blau:     ["käfer1.png", "käfer2.png"],
+      Rot:      ["rabbit1.png", "rabbit2.png"],
+      Gelb:     ["frog1.png", "frog2.png"],
+      Kreis:    ["vogel1.png", "vogel2.png"],
+      Dreieck:  ["drache1.png", "drache2.png"],
+      Chaser:   ["dino1.png", "dino2.png"],
+      Coin:     ["coin1.png", "coin2.png"],
+      Block:    ["block1.png"],
+      BG:       ["background.png"]
     };
-  }
+    const img = {}, aud = {};
+    let loaded=0, needed=0;
 
-  // === Hauptschleife ===
-  function loop(ts){
-    const dt=0.016;
-    update(dt); draw();
-    requestAnimationFrame(loop);
-  }
+    for(const k in SPR) needed+=SPR[k].length;
+    ["coin.mp3", "backgroundMusic.mp3"].forEach(f=>needed++);
 
-  function update(dt){
-    if(gameState==="playing"){
-      gameTime+=dt; score=Math.floor(gameTime*10);
-      coinTimer+=dt; blockTimer+=dt; levelTimer+=dt;
-      if(blockTimer>Math.max(0.4,1.5-(level-1)*0.15)){
-        blockTimer=0;
-        const spawns=(level>=3?Math.min(3,level-2):0)+1;
-        for(let i=0;i<spawns;i++){
-          blocks.push({x:player.x+WIDTH+i*70,y:Math.random()*(HEIGHT-280)+160,w:60,h:60});
+    for (const k in SPR) SPR[k].forEach(src=>{
+      const i=new Image(); i.src=src;
+      i.onload=()=>{ if(++loaded===needed) init(); };
+      img[k] = img[k]||[]; img[k].push(i);
+    });
+    aud.coin = new Audio("coin.mp3");
+    aud.bg = new Audio("backgroundMusic.mp3"); aud.bg.loop=true; aud.bg.oncanplay = ()=>{ if(++loaded===needed) init(); };
+
+    // == GAME STATE ==
+    let coins, blocks, projectiles, player, chaser, skins, sel;
+    let timers={}, anim={t:0,f:1}, scoreData={}, gameState="start";
+
+    function resetGame(){
+      coins = []; blocks = []; projectiles = [];
+      timers = {coin:0, block:0, game:0, level:0, specialCD:0};
+      scoreData={score:0, coinCount:0, level:1, specialActive:false, specialT:0, projDelay:null};
+      player={x:100,y:H/2,w:40,h:40,baseSp:4,sp:4,vy:0};
+      chaser={x:50,y:H/2,w:40,h:40,sp:2.5};
+      sel=skins[0];
+    }
+
+    function init(){
+      aud.bg.play().catch(()=>{});
+      skins = [
+        {name:"Standard",cost:0,owned:true},
+        {name:"Blau",cost:10,owned:false},
+        {name:"Rot",cost:25,owned:false},
+        {name:"Gelb",cost:40,owned:false},
+        {name:"Kreis",cost:65,owned:false},
+        {name:"Dreieck",cost:111,owned:false}
+      ];
+      resetGame();
+      setupInput();
+      requestAnimationFrame(main);
+    }
+
+    function setupInput(){
+      document.getElementById("up").onpointerdown = ()=>player.vy=player.sp;
+      document.getElementById("down").onpointerdown = ()=>player.vy=-player.sp;
+      document.getElementById("up").onpointerup = ()=>player.vy=0;
+      document.getElementById("down").onpointerup = ()=>player.vy=0;
+      document.getElementById("power").onclick = activateSpecial;
+      CANVAS.onclick = ()=> {
+        if(gameState==="start"){gameState="playing";resetGame();}
+        else if(gameState==="gameover"){gameState="start";}
+      };
+    }
+
+    function main(){
+      const dt=1/60;
+      update(dt); draw();
+      requestAnimationFrame(main);
+    }
+
+    function update(dt){
+      anim.t+=dt; if(anim.t>0.2){ anim.t=0; anim.f=3-anim.f; }
+
+      if(gameState!=="playing") return;
+
+      timers.game+=dt;
+      scoreData.score=Math.floor(timers.game*10);
+      timers.coin+=dt; timers.block+=dt; timers.level+=dt;
+
+      const lvl=scoreData.level;
+      if(timers.block>Math.max(0.4,1.5-(lvl-1)*0.15)){
+        timers.block=0;
+        let cnt=(lvl>=3?Math.min(3,lvl-2):0)+1;
+        for(let i=0;i<cnt;i++){
+          blocks.push({x:player.x+W+i*70,y:160+Math.random()*(H-280),w:60,h:60});
         }
       }
-      if(coinTimer>Math.max(0.8,2.5-(level-1)*0.2)){
-        coinTimer=0;
-        coins.push({x:player.x+WIDTH,y:Math.random()*(HEIGHT-280)+160,r:20,magnetTime:0,tx:0,ty:0});
+      if(timers.coin>Math.max(0.8,2.5-(lvl-1)*0.2)){
+        timers.coin=0;
+        coins.push({x:player.x+W,y:160+Math.random()*(H-280),r:20,mag:0,tx:0,ty:0});
       }
 
-      blocks=blocks.filter(b=>{
+      blocks = blocks.filter(b=>{
         b.x-=4;
-        if(collide(player,b)){
-          player.x=Math.min(player.x,b.x-player.w);
-        }
-        return b.x+b.w>player.x-WIDTH;
+        if(collide(player,b)) player.x=Math.min(player.x,b.x-player.w);
+        return b.x+b.w>player.x-W;
       });
 
-      coins=coins.filter(c=>{
-        if(c.magnetTime>0){
-          c.magnetTime-=dt;
-          c.x+=(player.x+player.w/2-c.x)*0.1;
-          c.y+=(player.y+player.h/2-c.y)*0.1;
-        } else c.x-=4;
+      coins = coins.filter(c=>{
+        if(c.mag>0){ c.mag-=dt; c.x+=(player.x+player.w/2-c.x)*0.1; c.y+=(player.y+player.h/2-c.y)*0.1; }
+        else c.x-=4;
         if(dist(player.x+player.w/2,player.y+player.h/2,c.x,c.y)<c.r+player.w/2){
-          coinCount++; coinSound.currentTime=0; coinSound.play();
+          scoreData.coinCount++; aud.coin.currentTime=0; aud.coin.play();
           return false;
         }
-        return c.x+c.r>player.x-WIDTH;
+        return c.x+c.r>player.x-W;
       });
 
-      projectiles=projectiles.filter(p=>{
-        p.x+=p.speed;
+      projectiles = projectiles.filter(p=>{
+        p.x+=p.sp;
         for(let i=blocks.length-1;i>=0;i--){
-          const b=blocks[i];
+          let b=blocks[i];
           if(p.x>b.x && p.x<b.x+b.w && p.y>b.y && p.y<b.y+b.h){
-            blocks.splice(i,1); return false;
+            blocks.splice(i,1);
+            return false;
           }
         }
-        return p.x<player.x+WIDTH;
+        return p.x<player.x+W;
       });
 
       if(!blocks.some(b=>collide(player,b))) player.x+=1.5;
-      player.y=Math.max(160,Math.min(HEIGHT-60-player.h,player.y+player.vy));
-      const dx=player.x-60-chaser.x, dy=player.y-chaser.y;
-      const d=Math.hypot(dx,dy);
-      if(d>1){ chaser.x+=dx/d*chaser.speed; chaser.y+=dy/d*chaser.speed; }
-      if(!specialActive && collide(player,chaser)) gameState="gameover";
+      player.y=Math.max(160,Math.min(H-60-player.h,player.y+player.vy));
 
-      if(specialActive){
-        specialActiveTimer-=dt;
-        if(specialActiveTimer<=0){ specialActive=false; player.speed=player.baseSpeed; }
+      let dx=player.x-60-chaser.x, dy=player.y-chaser.y, d=Math.hypot(dx,dy);
+      if(d>1){ chaser.x+=dx/d*chaser.sp; chaser.y+=dy/d*chaser.sp; }
+      if(!scoreData.specialActive && collide(player,chaser)) gameState="gameover";
+
+      if(scoreData.specialActive){
+        scoreData.specialT-=dt;
+        if(scoreData.specialT<=0){ scoreData.specialActive=false; player.sp=player.baseSp; }
       }
 
-      if(projectileDelay!==null){
-        projectileDelay-=dt;
-        if(projectileDelay<=0){ shootProjectile(); projectileDelay=null; }
+      if(scoreData.projDelay!==null){
+        scoreData.projDelay-=dt;
+        if(scoreData.projDelay<=0){ shoot(); scoreData.projDelay=null; }
       }
 
-      if(levelTimer>=30){
-        levelTimer=0; level++;
-        chaser.speed+=0.6; player.speed+=0.3;
+      if(timers.level>=30){
+        timers.level=0; scoreData.level++;
+        chaser.sp+=0.6; player.sp+=0.3;
       }
-
-      animTimer+=dt;
-      if(animTimer>0.2){ animTimer=0; animFrame^=1; }
     }
-  }
 
-  function draw(){
-    ctx.clearRect(0,0,WIDTH,HEIGHT);
-    if(gameState==="start"){
-      drawStart(); return;
-    } else if(gameState==="gameover"){
-      drawGameOver(); return;
-    }
-    // Camera
-    ctx.save(); ctx.translate(-player.x+WIDTH/5,0);
-    // Hintergrund
-    const bg=images.Background[0];
-    const bgW=1000, bgH=HEIGHT*1.9;
-    const off= (player.x*1.8)%bgW;
-    for(let i=-1;i<5;i++){
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+
+      if(gameState==="start"){
+        drawStart(); return;
+      }
+      if(gameState==="gameover"){
+        drawGameOver(); return;
+      }
+
+      // Parallax-Hintergrund
+      const bg=img.BG[0];
+      const bw=1000, bh=H*1.9;
+      const ox=(player.x*1.8)%bw;
       ctx.globalAlpha=0.63;
-      ctx.drawImage(bg, i*bgW-off,0,bgW,bgH);
+      for(let i=-1;i<5;i++) ctx.drawImage(bg,i*bw-ox,0,bw,bh);
+      ctx.globalAlpha=1;
+
+      // Render sprites & UI
+      blocks.forEach(b=>ctx.drawImage(img.Block[0],b.x,b.y,b.w,b.h));
+      coins.forEach(c=>ctx.drawImage(img.Coin[anim.f-1],c.x-c.r,c.y-c.r,2*c.r,2*c.r));
+      projectiles.forEach(p=>ctx.drawImage(img.Coin[0],p.x-p.r,p.y-p.r,2*p.r,2*p.r));
+
+      const arr=img[sel.name];
+      ctx.drawImage(arr[anim.f-1],player.x,player.y,player.w,player.h);
+      ctx.drawImage(img.Chaser[anim.f-1],chaser.x,chaser.y,chaser.w,chaser.h);
+
+      // UI
+      ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+      ctx.fillStyle="#222"; ctx.fillRect(0,H-60,W,60);
+      ctx.fillRect(0,0,W,160);
+      ctx.fillStyle="#fff"; ctx.font="26px sans-serif";
+      ctx.fillText("Punkte: "+scoreData.score,W/3,H-30);
+      ctx.fillStyle="#FFD"; ctx.fillText("Münzen: "+scoreData.coinCount,W/2,H-70);
+      ctx.fillStyle="#fff"; ctx.font="24px sans-serif";
+      ctx.fillText("Level: "+scoreData.level,W-60,H-30);
+      const pb=document.getElementById("power");
+      if(timers.specialCD>0){
+        timers.specialCD=Math.max(0,timers.specialCD-dt);
+        pb.classList.add("cool"); pb.textContent=`POWER (${Math.ceil(timers.specialCD)}s)`;
+      } else {
+        pb.classList.remove("cool"); pb.textContent="POWER";
+      }
+      ctx.restore();
     }
-    ctx.globalAlpha=1;
-    // Blocks
-    blocks.forEach(b=> ctx.drawImage(images.Block[0],b.x,b.y,b.w,b.h));
-    // Coins
-    coins.forEach(c=> ctx.drawImage(images.Coin[animFrame],c.x-20,c.y-20,40,40));
-    // Projectiles
-    projectiles.forEach(p=> ctx.drawImage(images.Coin[0],p.x-10,p.y-10,20,20));
-    // Spieler
-    const skinArr=images[selectedSkin.name];
-    ctx.drawImage(skinArr[animFrame],player.x,player.y,player.w,player.h);
-    // Chaser
-    ctx.drawImage(images.Chaser[animFrame],chaser.x,chaser.y,chaser.w,chaser.h);
-    ctx.restore();
 
-    // UI
-    ctx.fillStyle="#222"; ctx.fillRect(0,HEIGHT-60,WIDTH,60);
-    ctx.fillRect(0,0,WIDTH,160);
-    ctx.fillStyle="#fff"; ctx.font="26px sans-serif";
-    ctx.fillText("Punkte: "+score,WIDTH/3,HEIGHT-30);
-    ctx.fillStyle="#FFD"; ctx.fillText("Münzen: "+coinCount,WIDTH/2,HEIGHT-70);
-    ctx.fillStyle="#fff"; ctx.font="24px sans-serif";
-    ctx.fillText("Level: "+level,WIDTH-60,HEIGHT-30);
-
-    const btn=document.getElementById("btn-special");
-    if(specialCooldown>0){
-      specialCooldown-=0.016;
-      btn.classList.add("cooldown");
-      btn.textContent=`POWER (${Math.ceil(specialCooldown)}s)`;
-    } else {
-      btn.classList.remove("cooldown");
-      btn.textContent="POWER";
+    function drawStart(){
+      ctx.fillStyle="#fff"; ctx.font="44px sans-serif"; ctx.textAlign="center";
+      ctx.fillText("TURTLE RUN",W/2,H/2);
+      ctx.font="24px sans-serif";
+      ctx.fillText("Klick/Tippe zum Starten",W/2,H/2+40);
     }
-  }
-
-  function drawStart(){
-    ctx.fillStyle="#fff"; ctx.font="44px sans-serif";
-    ctx.textAlign="center";
-    ctx.fillText("TURTLE RUN",WIDTH/2,HEIGHT/2);
-    ctx.font="24px sans-serif";
-    ctx.fillText("Klick/Tippe, um zu starten",WIDTH/2,HEIGHT/2+40);
-  }
-  function drawGameOver(){
-    ctx.fillStyle="#fff"; ctx.font="44px sans-serif";
-    ctx.textAlign="center";
-    ctx.fillText("GAME OVER",WIDTH/2,HEIGHT/2);
-    ctx.fillText("Punkte: "+score,WIDTH/2,HEIGHT/2+60);
-    ctx.fillText("Münzen: "+coinCount,WIDTH/2,HEIGHT/2+100);
-  }
-
-  function collide(a,b){
-    return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
-  }
-  function dist(x1,y1,x2,y2){
-    return Math.hypot(x1-x2,y1-y2);
-  }
-
-  function activateSpecial(){
-    if(specialCooldown>0||gameState!=="playing") return;
-    specialCooldown=6;
-    const p=selectedSkin.name;
-    if(p==="Blau"){
-      player.speed=7; specialActive=true; specialActiveTimer=3;
-    } else if(p==="Rot"){
-      specialActive=true; specialActiveTimer=3;
-    } else if(p==="Gelb"||p==="Kreis"){
-      const t=(p==="Gelb"?2.5:4);
-      coins.forEach(c=>{
-        c.magnetTime=t; c.tx=player.x+player.w/2; c.ty=player.y+player.h/2;
-      });
-    } else if(p==="Dreieck"){
-      shootProjectile();
-      projectileDelay=0.5;
+    function drawGameOver(){
+      ctx.fillStyle="#fff"; ctx.font="44px sans-serif"; ctx.textAlign="center";
+      ctx.fillText("GAME OVER",W/2,H/2);
+      ctx.font="28px sans-serif";
+      ctx.fillText("Punkte: "+scoreData.score,W/2,H/2+60);
+      ctx.fillText("Münzen: "+scoreData.coinCount,W/2,H/2+100);
     }
-  }
 
-  function shootProjectile(){
-    projectiles.push({
-      x:player.x+player.w,
-      y:player.y+player.h/2,
-      r:10, speed:6
-    });
-  }
+    function collide(a,b){
+      return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y;
+    }
+    function dist(x1,y1,x2,y2){
+      return Math.hypot(x1-x2, y1-y2);
+    }
+
+    function activateSpecial(){
+      if(timers.specialCD>0 || gameState!=="playing") return;
+      const p=sel.name;
+      timers.specialCD=6;
+
+      if(p==="Blau"){
+        player.sp=7; scoreData.specialActive=true; scoreData.specialT=3;
+      } else if(p==="Rot"){
+        scoreData.specialActive=true; scoreData.specialT=3;
+      } else if(p==="Gelb"||p==="Kreis"){
+        const t=(p==="Gelb"?2.5:4);
+        coins.forEach(c=>{ c.mag=t; c.tx=player.x+player.w/2; c.ty=player.y+player.h/2; });
+      } else if(p==="Dreieck"){
+        shoot(); scoreData.projDelay=0.5;
+      }
+    }
+
+    function shoot(){
+      projectiles.push({x:player.x+player.w,y:player.y+player.h/2,r:10,sp:6});
+    }
   </script>
 </body>
 </html>
